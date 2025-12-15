@@ -2,7 +2,7 @@
 
 > **A prescriptive analytics tool that helps freelancers maximize their earnings by intelligently selecting which projects to take on—powered by Mixed Integer Linear Programming (MILP).**
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](YOUR-STREAMLIT-URL)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gigoptimizer.streamlit.app)
 
 ---
 
@@ -96,7 +96,7 @@ GigOptimizer uses **Mixed Integer Linear Programming (MILP)**—the same optimiz
 
 ## 🚀 Live Demo
 
-**[Try GigOptimizer Here →](YOUR-STREAMLIT-URL)**
+**[Try GigOptimizer Here →](https://gigoptimizer.streamlit.app)**
 
 ![GigOptimizer Screenshot](screenshot.png)
 
@@ -246,8 +246,8 @@ While Gurobi is the gold standard for optimization (we learned it in class!), it
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR-USERNAME/gig-optimizer.git
-cd gig-optimizer
+git clone https://github.com/jaswanthi03/GigOptimizer.git
+cd GigOptimizer
 
 # Install dependencies
 pip install -r requirements.txt
@@ -310,13 +310,15 @@ The freelance project management software market is valued at **$6.7 billion** a
 
 ## 🎬 Demo Video
 
-**[Watch the 3-Minute Walkthrough →](YOUR-LOOM-LINK)**
+**[▶️ Watch the Full Product Walkthrough on YouTube →](https://youtu.be/5I7wl9xIAjI)**
+
+[![GigOptimizer Demo Video](https://img.youtube.com/vi/5I7wl9xIAjI/maxresdefault.jpg)](https://youtu.be/5I7wl9xIAjI)
 
 In this video, I cover:
-1. **The Problem** (0:00-1:00): Why freelancers struggle with project selection
-2. **The Approach** (1:00-2:00): How MILP optimization solves this
-3. **Live Demo** (2:00-4:00): Walking through the app with sample data
-4. **Learnings** (4:00-5:00): Key insights from building this
+1. **The Problem**: Why freelancers struggle with project selection
+2. **The Approach**: How MILP optimization solves this
+3. **Live Demo**: Walking through the app with sample data
+4. **Key Learnings**: Insights from building this prescriptive analytics product
 
 ---
 
