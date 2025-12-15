@@ -1,0 +1,536 @@
+"""
+GigOptimizer - Freelancer Project Selection Optimizer
+======================================================
+A prescriptive analytics tool that helps freelancers maximize earnings
+by optimally selecting which projects to take on given time constraints.
+
+Built for ISOM 839 - Prescriptive Analytics at Suffolk University
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+from scipy.optimize import milp, LinearConstraint, Bounds
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Page configuration
+st.set_page_config(
+    page_title="GigOptimizer | Freelancer Project Selector",
+    page_icon="🚀",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for premium look
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 3rem;
+        font-weight: 700;
+        background: linear-gradient(120deg, #6366f1, #8b5cf6, #a855f7);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-align: center;
+        margin-bottom: 0;
+    }
+    .sub-header {
+        font-size: 1.2rem;
+        color: #64748b;
+        text-align: center;
+        margin-top: 0;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 1rem;
+        color: white;
+        text-align: center;
+    }
+    .stButton > button {
+        background: linear-gradient(120deg, #6366f1, #8b5cf6);
+        color: white;
+        border: none;
+        padding: 0.75rem 2rem;
+        font-size: 1.1rem;
+        font-weight: 600;
+        border-radius: 0.5rem;
+        width: 100%;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+    }
+    .recommendation-box {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        padding: 1.5rem;
+        border-radius: 1rem;
+        color: white;
+        margin: 1rem 0;
+    }
+    .warning-box {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        color: white;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+def optimize_projects(projects_df, available_hours, min_skill_match=0):
+    """
+    Optimize project selection using Mixed Integer Linear Programming.
+    
+    Objective: Maximize total earnings
+    Constraints:
+        - Total hours <= Available hours
+        - Skill match >= minimum threshold
+        - Binary decision for each project (take it or not)
+    
+    Returns: Selected projects and optimization results
+    """
+    n_projects = len(projects_df)
+    
+    if n_projects == 0:
+        return None, None, "No projects to optimize"
+    
+    # Filter by minimum skill match
+    eligible_mask = projects_df['skill_match'] >= min_skill_match
+    eligible_df = projects_df[eligible_mask].reset_index(drop=True)
+    
+    if len(eligible_df) == 0:
+        return None, None, "No projects meet the minimum skill match requirement"
+    
+    n_eligible = len(eligible_df)
+    
+    # Objective: Maximize earnings (minimize negative earnings)
+    # We use hourly_rate * hours as the total pay for each project
+    earnings = eligible_df['total_pay'].values
+    c = -earnings  # Negative because milp minimizes
+    
+    # Constraint: Total hours <= Available hours
+    hours = eligible_df['hours_required'].values
+    A = hours.reshape(1, -1)
+    
+    constraints = LinearConstraint(A, lb=-np.inf, ub=available_hours)
+    
+    # Bounds: Binary decision variables (0 or 1)
+    bounds = Bounds(lb=0, ub=1)
+    integrality = np.ones(n_eligible)  # All variables are integers
+    
+    # Solve the optimization problem
+    try:
+        result = milp(c, constraints=constraints, bounds=bounds, integrality=integrality)
+        
+        if result.success:
+            selected_indices = np.where(result.x > 0.5)[0]
+            selected_projects = eligible_df.iloc[selected_indices].copy()
+            
+            total_earnings = selected_projects['total_pay'].sum()
+            total_hours = selected_projects['hours_required'].sum()
+            
+            optimization_results = {
+                'total_earnings': total_earnings,
+                'total_hours': total_hours,
+                'available_hours': available_hours,
+                'hours_remaining': available_hours - total_hours,
+                'projects_selected': len(selected_projects),
+                'projects_available': n_projects,
+                'utilization': (total_hours / available_hours) * 100 if available_hours > 0 else 0
+            }
+            
+            return selected_projects, optimization_results, None
+        else:
+            return None, None, f"Optimization failed: {result.message}"
+    except Exception as e:
+        return None, None, f"Error during optimization: {str(e)}"
+
+
+def create_sample_projects():
+    """Generate sample project data for demonstration"""
+    return pd.DataFrame({
+        'project_name': [
+            'E-commerce Website Redesign',
+            'Mobile App UI/UX Design',
+            'Data Dashboard Development',
+            'API Integration Project',
+            'Brand Identity Package',
+            'SEO Optimization Campaign',
+            'Social Media Content Strategy',
+            'WordPress Plugin Development'
+        ],
+        'client': ['TechStart Inc', 'HealthApp Co', 'FinanceMetrics', 'RetailHub', 
+                   'GreenLeaf Studio', 'LocalBiz Group', 'FashionBrand', 'BloggerPro'],
+        'total_pay': [2500, 1800, 3200, 1500, 800, 1200, 600, 2000],
+        'hours_required': [40, 25, 50, 20, 12, 18, 10, 30],
+        'deadline_days': [14, 10, 21, 7, 5, 14, 7, 14],
+        'skill_match': [95, 80, 90, 75, 60, 85, 70, 88]
+    })
+
+
+def main():
+    # Header
+    st.markdown('<h1 class="main-header">🚀 GigOptimizer</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Maximize your freelance earnings with AI-powered project selection</p>', unsafe_allow_html=True)
+    
+    # Sidebar - User Inputs
+    with st.sidebar:
+        st.markdown("### ⚙️ Your Availability")
+        available_hours = st.slider(
+            "Hours available this month",
+            min_value=10,
+            max_value=200,
+            value=80,
+            step=5,
+            key="available_hours_slider",
+            help="Total hours you can dedicate to freelance work"
+        )
+        
+        min_skill_match = st.slider(
+            "Minimum skill match (%)",
+            min_value=0,
+            max_value=100,
+            value=50,
+            step=5,
+            key="min_skill_slider",
+            help="Only consider projects where your skills match at least this percentage"
+        )
+        
+        # Clear old results if constraints changed
+        if 'last_available_hours' not in st.session_state:
+            st.session_state.last_available_hours = available_hours
+            st.session_state.last_min_skill = min_skill_match
+        
+        if (st.session_state.last_available_hours != available_hours or 
+            st.session_state.last_min_skill != min_skill_match):
+            # Clear old optimization results when constraints change
+            if 'optimization_results' in st.session_state:
+                del st.session_state.optimization_results
+            if 'selected_projects' in st.session_state:
+                del st.session_state.selected_projects
+            st.session_state.last_available_hours = available_hours
+            st.session_state.last_min_skill = min_skill_match
+        
+        st.markdown("---")
+        st.markdown("### 📊 How It Works")
+        st.markdown("""
+        1. **Add your potential projects** with pay, hours, and skill fit
+        2. **Set your constraints** - available time and skill threshold
+        3. **Get optimal recommendations** - which projects maximize your earnings
+        """)
+        
+        st.markdown("---")
+        st.markdown("### 🧮 The Math Behind It")
+        st.markdown("""
+        GigOptimizer uses **Mixed Integer Linear Programming (MILP)** to solve:
+        
+        **Maximize:** Total Earnings  
+        **Subject to:** 
+        - Hours ≤ Available Time
+        - Skill Match ≥ Threshold
+        - Binary Selection (take or skip)
+        """)
+    
+    # Main content
+    tab1, tab2, tab3 = st.tabs(["📝 Enter Projects", "🎯 Optimization Results", "📈 Analytics"])
+    
+    with tab1:
+        st.markdown("### Add Your Potential Projects")
+        st.markdown("Enter the freelance opportunities you're considering. We'll tell you which ones to take!")
+        
+        # Option to use sample data
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            use_sample = st.button("📋 Load Sample Data", help="Load example projects to see how it works")
+        
+        if use_sample or 'projects_df' not in st.session_state:
+            if use_sample:
+                st.session_state.projects_df = create_sample_projects()
+                st.success("✅ Sample projects loaded! Go to 'Optimization Results' tab.")
+        
+        # Initialize empty dataframe if needed
+        if 'projects_df' not in st.session_state:
+            st.session_state.projects_df = pd.DataFrame(columns=[
+                'project_name', 'client', 'total_pay', 'hours_required', 'deadline_days', 'skill_match'
+            ])
+        
+        # Add new project form
+        st.markdown("#### ➕ Add a New Project")
+        with st.form("add_project_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                project_name = st.text_input("Project Name", placeholder="e.g., Website Redesign")
+                client = st.text_input("Client Name", placeholder="e.g., Acme Corp")
+                total_pay = st.number_input("Total Pay ($)", min_value=0, value=1000, step=100)
+            with col2:
+                hours_required = st.number_input("Hours Required", min_value=1, value=20, step=1)
+                deadline_days = st.number_input("Deadline (days)", min_value=1, value=14, step=1)
+                skill_match = st.slider("Your Skill Match (%)", 0, 100, 80)
+            
+            submitted = st.form_submit_button("➕ Add Project", use_container_width=True)
+            
+            if submitted and project_name:
+                new_project = pd.DataFrame({
+                    'project_name': [project_name],
+                    'client': [client],
+                    'total_pay': [total_pay],
+                    'hours_required': [hours_required],
+                    'deadline_days': [deadline_days],
+                    'skill_match': [skill_match]
+                })
+                st.session_state.projects_df = pd.concat([st.session_state.projects_df, new_project], ignore_index=True)
+                st.success(f"✅ Added: {project_name}")
+                st.rerun()
+        
+        # Display current projects
+        st.markdown("#### 📋 Your Project Pool")
+        if len(st.session_state.projects_df) > 0:
+            # Calculate hourly rate for display
+            display_df = st.session_state.projects_df.copy()
+            display_df['hourly_rate'] = (display_df['total_pay'] / display_df['hours_required']).round(2)
+            
+            # Styled dataframe
+            st.dataframe(
+                display_df,
+                column_config={
+                    'project_name': st.column_config.TextColumn('Project', width='medium'),
+                    'client': st.column_config.TextColumn('Client', width='small'),
+                    'total_pay': st.column_config.NumberColumn('Pay ($)', format='$%d'),
+                    'hours_required': st.column_config.NumberColumn('Hours', format='%d hrs'),
+                    'deadline_days': st.column_config.NumberColumn('Deadline', format='%d days'),
+                    'skill_match': st.column_config.ProgressColumn('Skill Match', min_value=0, max_value=100, format='%d%%'),
+                    'hourly_rate': st.column_config.NumberColumn('Hourly Rate', format='$%.2f/hr')
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Projects", len(display_df))
+            with col2:
+                st.metric("Total Potential Pay", f"${display_df['total_pay'].sum():,.0f}")
+            with col3:
+                st.metric("Total Hours Needed", f"{display_df['hours_required'].sum()} hrs")
+            with col4:
+                avg_rate = display_df['total_pay'].sum() / display_df['hours_required'].sum()
+                st.metric("Avg Hourly Rate", f"${avg_rate:.2f}/hr")
+            
+            # Clear button
+            if st.button("🗑️ Clear All Projects"):
+                st.session_state.projects_df = pd.DataFrame(columns=[
+                    'project_name', 'client', 'total_pay', 'hours_required', 'deadline_days', 'skill_match'
+                ])
+                st.rerun()
+        else:
+            st.info("👆 Add projects above or load sample data to get started!")
+    
+    with tab2:
+        st.markdown("### 🎯 Optimal Project Selection")
+        
+        if len(st.session_state.projects_df) == 0:
+            st.warning("⚠️ Add some projects first! Go to the 'Enter Projects' tab.")
+        else:
+            # Run optimization
+            if st.button("🚀 Optimize My Projects", use_container_width=True, type="primary"):
+                with st.spinner("Running optimization algorithm..."):
+                    selected, results, error = optimize_projects(
+                        st.session_state.projects_df,
+                        available_hours,
+                        min_skill_match
+                    )
+                    
+                    if error:
+                        st.error(f"❌ {error}")
+                    else:
+                        st.session_state.optimization_results = results
+                        st.session_state.selected_projects = selected
+            
+            # Display results
+            if 'optimization_results' in st.session_state and st.session_state.optimization_results:
+                results = st.session_state.optimization_results
+                selected = st.session_state.selected_projects
+                
+                # Success message
+                st.markdown(f"""
+                <div class="recommendation-box">
+                    <h3 style="margin-top:0;">✅ Optimization Complete!</h3>
+                    <p style="font-size:1.1rem;">Take <strong>{results['projects_selected']}</strong> projects to earn 
+                    <strong>${results['total_earnings']:,.0f}</strong> in <strong>{results['total_hours']:.0f}</strong> hours</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Key metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("💰 Optimal Earnings", f"${results['total_earnings']:,.0f}")
+                with col2:
+                    st.metric("⏱️ Hours Used", f"{results['total_hours']:.0f} / {results['available_hours']}")
+                with col3:
+                    st.metric("📈 Utilization", f"{results['utilization']:.1f}%")
+                with col4:
+                    effective_rate = results['total_earnings'] / results['total_hours'] if results['total_hours'] > 0 else 0
+                    st.metric("💵 Effective Rate", f"${effective_rate:.2f}/hr")
+                
+                st.markdown("---")
+                
+                # Recommended projects
+                st.markdown("#### ✅ TAKE These Projects:")
+                if len(selected) > 0:
+                    for idx, row in selected.iterrows():
+                        hourly_rate = row['total_pay'] / row['hours_required']
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); 
+                                    padding: 1rem 1.5rem; border-radius: 0.75rem; margin-bottom: 0.75rem; color: white;">
+                            <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem;">
+                                {row['project_name']} <span style="font-weight: 400; opacity: 0.9;">— {row['client']}</span>
+                            </div>
+                            <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.95rem;">
+                                <span>💰 <strong>${row['total_pay']:,.0f}</strong></span>
+                                <span>⏱️ <strong>{row['hours_required']}</strong> hrs</span>
+                                <span>📊 <strong>{row['skill_match']}%</strong> match</span>
+                                <span>💵 <strong>${hourly_rate:.2f}</strong>/hr</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Projects to skip
+                skipped = st.session_state.projects_df[
+                    ~st.session_state.projects_df['project_name'].isin(selected['project_name'])
+                ]
+                
+                if len(skipped) > 0:
+                    st.markdown("#### ⏭️ SKIP These Projects:")
+                    st.caption("These don't fit your optimal selection given time constraints")
+                    for idx, row in skipped.iterrows():
+                        st.markdown(f"""
+                        <div style="background: #f1f5f9; padding: 0.75rem 1rem; border-radius: 0.5rem; 
+                                    margin-bottom: 0.5rem; color: #64748b; border-left: 4px solid #cbd5e1;">
+                            <span style="text-decoration: line-through;">{row['project_name']}</span> 
+                            — {row['client']} 
+                            <span style="opacity: 0.7;">(${row['total_pay']:,.0f}, {row['hours_required']} hrs)</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+    
+    with tab3:
+        st.markdown("### 📈 Project Analytics")
+        
+        if len(st.session_state.projects_df) == 0:
+            st.warning("⚠️ Add some projects first!")
+        else:
+            df = st.session_state.projects_df.copy()
+            # Ensure numeric columns are properly typed for Plotly
+            df['total_pay'] = pd.to_numeric(df['total_pay'], errors='coerce')
+            df['hours_required'] = pd.to_numeric(df['hours_required'], errors='coerce')
+            df['skill_match'] = pd.to_numeric(df['skill_match'], errors='coerce')
+            df['hourly_rate'] = df['total_pay'] / df['hours_required']
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Pay vs Hours scatter
+                fig = px.scatter(
+                    df,
+                    x='hours_required',
+                    y='total_pay',
+                    size='skill_match',
+                    color='hourly_rate',
+                    hover_name='project_name',
+                    labels={
+                        'hours_required': 'Hours Required',
+                        'total_pay': 'Total Pay ($)',
+                        'skill_match': 'Skill Match',
+                        'hourly_rate': 'Hourly Rate ($/hr)'
+                    },
+                    title='💰 Pay vs Time Investment',
+                    color_continuous_scale='Viridis'
+                )
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col2:
+                # Hourly rate comparison
+                fig = px.bar(
+                    df.sort_values('hourly_rate', ascending=True),
+                    x='hourly_rate',
+                    y='project_name',
+                    orientation='h',
+                    title='💵 Hourly Rate Comparison',
+                    labels={'hourly_rate': 'Hourly Rate ($/hr)', 'project_name': 'Project'},
+                    color='hourly_rate',
+                    color_continuous_scale='RdYlGn'
+                )
+                fig.update_layout(height=400, showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # If optimization was run, show comparison
+            if 'optimization_results' in st.session_state and st.session_state.optimization_results:
+                st.markdown("---")
+                st.markdown("#### 🔍 Selection Analysis")
+                
+                selected = st.session_state.selected_projects
+                results = st.session_state.optimization_results
+                
+                # Comparison: What if you took ALL projects?
+                total_all = df['total_pay'].sum()
+                hours_all = df['hours_required'].sum()
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    # Donut chart for hours
+                    fig = go.Figure(data=[go.Pie(
+                        labels=['Hours Used', 'Hours Remaining'],
+                        values=[results['total_hours'], results['hours_remaining']],
+                        hole=.6,
+                        marker_colors=['#6366f1', '#e2e8f0']
+                    )])
+                    fig.update_layout(
+                        title='⏱️ Time Utilization',
+                        annotations=[dict(text=f"{results['utilization']:.0f}%", x=0.5, y=0.5, font_size=24, showarrow=False)]
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    # Comparison chart
+                    comparison_df = pd.DataFrame({
+                        'Scenario': ['If you took ALL', 'Optimal (within time)'],
+                        'Earnings': [total_all, results['total_earnings']],
+                        'Hours': [hours_all, results['total_hours']]
+                    })
+                    fig = px.bar(
+                        comparison_df,
+                        x='Scenario',
+                        y='Earnings',
+                        text='Earnings',
+                        title='💰 Earnings Comparison',
+                        color='Scenario',
+                        color_discrete_sequence=['#94a3b8', '#6366f1']
+                    )
+                    fig.update_traces(texttemplate='$%{text:,.0f}', textposition='outside')
+                    fig.update_layout(showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # Key insight
+                if hours_all > available_hours:
+                    st.info(f"""
+                    💡 **Key Insight:** Taking all {len(df)} projects would require {hours_all} hours, 
+                    but you only have {available_hours} hours available. The optimizer selected the 
+                    {results['projects_selected']} projects that maximize your earnings within your time constraint.
+                    """)
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: #64748b; font-size: 0.9rem;">
+        <p><strong>GigOptimizer</strong> | Built for ISOM 839 - Prescriptive Analytics | Suffolk University</p>
+        <p>Powered by Mixed Integer Linear Programming (MILP) with SciPy</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+if __name__ == "__main__":
+    main()
