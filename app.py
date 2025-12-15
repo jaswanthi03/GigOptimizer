@@ -276,10 +276,10 @@ def main():
                 new_project = pd.DataFrame({
                     'project_name': [project_name],
                     'client': [client],
-                    'total_pay': [total_pay],
-                    'hours_required': [hours_required],
-                    'deadline_days': [deadline_days],
-                    'skill_match': [skill_match]
+                    'total_pay': [float(total_pay)],
+                    'hours_required': [float(hours_required)],
+                    'deadline_days': [float(deadline_days)],
+                    'skill_match': [float(skill_match)]
                 })
                 st.session_state.projects_df = pd.concat([st.session_state.projects_df, new_project], ignore_index=True)
                 st.success(f"✅ Added: {project_name}")
@@ -290,6 +290,11 @@ def main():
         if len(st.session_state.projects_df) > 0:
             # Calculate hourly rate for display
             display_df = st.session_state.projects_df.copy()
+            # Ensure numeric types
+            display_df['total_pay'] = pd.to_numeric(display_df['total_pay'], errors='coerce')
+            display_df['hours_required'] = pd.to_numeric(display_df['hours_required'], errors='coerce')
+            display_df['skill_match'] = pd.to_numeric(display_df['skill_match'], errors='coerce')
+            display_df['deadline_days'] = pd.to_numeric(display_df['deadline_days'], errors='coerce')
             display_df['hourly_rate'] = (display_df['total_pay'] / display_df['hours_required']).round(2)
             
             # Styled dataframe
